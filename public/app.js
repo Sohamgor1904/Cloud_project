@@ -10,8 +10,8 @@
 // ═══════════════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════
-const USE_STUB = true;
-const API_BASE = ''; // '' = same origin | 'http://localhost:3000' for separate port
+const USE_STUB = false;
+const API_BASE = 'http://localhost:3000';
 
 // ── ROUTE ALGORITHM WEIGHTS ──────────────────────────────────────────────
 // Tune to shift the trade-off: 1.0/0.0 = pure fill-first, 0.0/1.0 = pure nearest-first
