@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartWaste — Dashboard</title>
+  <meta name="description" content="SmartWaste GIFT City live waste management dashboard — real-time bin monitoring, city map, and route optimisation." />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet.js (city map) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js (analytics) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+  <!-- Dashboard styles -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Auth guard (runs immediately) -->
+  <script>
+    (function() {
+      const session = localStorage.getItem('sw_session');
+      if (!session) { window.location.replace('login.html'); }
+      else {
+        try {
+          const s = JSON.parse(session);
+          document.addEventListener('DOMContentLoaded', () => {
+            const el = document.getElementById('user-name-display');
+            if (el) el.textContent = s.name || 'Operator';
+            const ro = document.getElementById('user-role-display');
+            if (ro) ro.textContent = s.role || 'operator';
+          });
+        } catch(e) { window.location.replace('login.html'); }
+      }
+    })();
+  </script>
+
+  <!-- Loading overlay -->
+  <div id="loading-overlay" class="loading-overlay" aria-label="Loading" role="status">
+    <div class="spinner-wrap">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="spinner-text">SmartWaste</div>
+      <div class="spinner-sub">Loading GIFT City data…</div>
+    </div>
+  </div>
+
+  <!-- Error banner -->
+  <div id="error-banner" class="error-banner hidden" role="alert" aria-live="assertive"></div>
+
+  <!-- ── TOP NAV ────────────────────────────────────────────────────────── -->
+  <nav class="app-nav" role="navigation" aria-label="Main navigation">
+    <div class="nav-inner">
+      <!-- Brand -->
+      <a href="landing.html" class="nav-brand" aria-label="SmartWaste Home">
+        <span class="nav-brand-icon" aria-hidden="true">♻</span>
+        <div>
+          <div class="nav-brand-name">SmartWaste</div>
+          <div class="nav-brand-city">GIFT City, Gandhinagar</div>
+        </div>
+      </a>
+
+      <!-- Tab Navigation -->
+      <div class="nav-tabs" role="tablist">
+        <button class="nav-tab active" data-tab="dashboard" role="tab" aria-selected="true" aria-controls="panel-dashboard" id="tab-dashboard">
+          🗺 Dashboard
+        </button>
+        <button class="nav-tab" data-tab="bins" role="tab" aria-selected="false" aria-controls="panel-bins" id="tab-bins">
+          🗑 All Bins
+        </button>
+        <button class="nav-tab" data-tab="analytics" role="tab" aria-selected="false" aria-controls="panel-analytics" id="tab-analytics">
+          📊 Analytics
+        </button>
+        <button class="nav-tab" data-tab="system" role="tab" aria-selected="false" aria-controls="panel-system" id="tab-system">
+          ⚙ System
+        </button>
+      </div>
+
+      <!-- Right controls -->
+      <div class="nav-right">
+        <div class="status-pill" role="status" aria-label="System status">
+          <div class="status-dot" aria-hidden="true"></div>
+          System Live
+        </div>
+        <span class="stub-pill" id="stub-pill" title="Running with stub data — set USE_STUB=false to use real API">⚡ Stub</span>
+        <time class="nav-clock" id="live-clock" aria-label="Current time" datetime=""></time>
+        <!-- User menu -->
+        <div class="user-pill" id="user-pill" tabindex="0" aria-haspopup="true" aria-expanded="false">
+          <div class="user-avatar" aria-hidden="true" id="user-avatar">?</div>
+          <span class="user-name" id="user-name-display">Operator</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="user-dropdown hidden" id="user-dropdown" role="menu">
+          <div class="ud-info">
+            <span class="ud-name" id="ud-name-full">Operator</span>
+            <span class="ud-role" id="user-role-display">operator</span>
+          </div>
+          <div class="ud-sep"></div>
+          <button class="ud-item" onclick="logout()" role="menuitem">🚪 Log Out</button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Overflow alert banners -->
+  <div id="alert-container" class="alert-container" aria-live="polite" aria-label="Overflow alerts"></div>
+
+  <main role="main">
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         TAB 1 — DASHBOARD (Map + Route)
+         ══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-dashboard" role="tabpanel" aria-labelledby="tab-dashboard">
+
+      <!-- Stats bar -->
+      <div class="stats-bar" aria-label="Key metrics">
+        <div class="stat-card">
+          <span class="stat-ico" aria-hidden="true">🗑</span>
+          <div class="stat-body">
+            <div class="stat-val" id="sv-total">—</div>
+            <div class="stat-lbl">Total Bins</div>
+          </div>
+        </div>
+        <div class="stat-card stat-danger">
+          <span class="stat-ico" aria-hidden="true">🔴</span>
+          <div class="stat-body">
+            <div class="stat-val danger" id="sv-critical">—</div>
+            <div class="stat-lbl">Critical (&gt;75%)</div>
+          </div>
+        </div>
+        <div class="stat-card stat-primary">
+          <span class="stat-ico" aria-hidden="true">🚛</span>
+          <div class="stat-body">
+            <div class="stat-val primary" id="sv-route">—</div>
+            <div class="stat-lbl">In Today's Route</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-ico" aria-hidden="true">⚡</span>
+          <div class="stat-body">
+            <div class="stat-val" id="sv-sims">0</div>
+            <div class="stat-lbl">Simulations Run</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-ico" aria-hidden="true">🕐</span>
+          <div class="stat-body">
+            <div class="stat-val sm" id="sv-time">—</div>
+            <div class="stat-lbl">Last Simulated</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Simulate bar -->
+      <div class="simulate-bar">
+        <div class="sim-info">
+          <div class="sim-title">GIFT City — Smart Route Dispatch</div>
+          <div class="sim-desc">
+            Click <strong>Run Simulation</strong> to generate fresh IoT sensor data for all 22 bins across Zones A–D.
+            The system calculates priority scores and renders today's optimised collection route live on the city map.
+          </div>
+        </div>
+        <button class="btn-sim" id="simulate-btn" aria-label="Run waste simulation">
+          <span class="btn-ico" aria-hidden="true">⚡</span>
+          <span class="btn-txt">Run Simulation</span>
+        </button>
+      </div>
+
+      <!-- Map + Route layout -->
+      <div class="map-layout">
+        <div class="map-wrap">
+          <!-- Map control buttons -->
+          <div class="map-btn-group" aria-label="Map controls">
+            <button class="map-ctrl-btn" id="btn-fit-all">⊙ All Bins</button>
+            <button class="map-ctrl-btn" id="btn-fit-route">↗ Fit Route</button>
+          </div>
+          <!-- Leaflet map -->
+          <div id="city-map" aria-label="GIFT City interactive map"></div>
+        </div>
+
+        <!-- Route Sidebar -->
+        <aside class="route-aside" aria-labelledby="route-aside-title">
+          <div class="aside-hdr">
+            <span aria-hidden="true">🚛</span>
+            <h2 class="aside-title" id="route-aside-title">Today's Route</h2>
+            <span class="route-count-badge" id="route-badge" aria-label="Number of route stops">—</span>
+          </div>
+          <p class="aside-sub">Priority ≥ 7.0 · Sorted by fill urgency + proximity · Click to pan map</p>
+
+          <div class="route-list" id="route-list" role="list" aria-label="Route stops in order"></div>
+
+          <div class="route-empty hidden" id="route-empty" aria-live="polite">
+            <div class="empty-ico" aria-hidden="true">🗺</div>
+            <div class="empty-ttl">No route planned yet</div>
+            <div class="empty-sub">Click <strong>Run Simulation</strong> to generate today's route based on live bin data.</div>
+          </div>
+
+          <!-- Algorithm explainer -->
+          <details class="formula-det">
+            <summary class="formula-sum">How is the route ordered?</summary>
+            <div class="formula-body">
+              <code>score = 0.6 × normFill − 0.4 × normDist</code>
+              <p><strong>Step 1 — Candidate pool:</strong> bins where <code>priority ≥ 7.0</code> (top 10 selected).</p>
+              <p><strong>Step 2 — Greedy ordering:</strong> truck picks the next bin maximising combined fill urgency (60%) and proximity (40%) using real Haversine distances. Prevents city-wide zigzagging.</p>
+            </div>
+          </details>
+        </aside>
+      </div>
+
+    </div><!-- /panel-dashboard -->
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         TAB 2 — ALL BINS (Full table)
+         ══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel hidden" id="panel-bins" role="tabpanel" aria-labelledby="tab-bins">
+
+      <div class="panel-hdr">
+        <div>
+          <h2 class="panel-title">🗑 All Bins — Full Status</h2>
+          <p class="panel-sub">Live fill levels and priority scores for all 22 monitoring points across GIFT City</p>
+        </div>
+        <div class="zone-filters" role="group" aria-label="Filter bins by zone">
+          <button class="zone-btn active" data-zone="all">All Zones</button>
+          <button class="zone-btn zone-a" data-zone="A">Zone A — Financial</button>
+          <button class="zone-btn zone-b" data-zone="B">Zone B — Residential</button>
+          <button class="zone-btn zone-c" data-zone="C">Zone C — Commercial</button>
+          <button class="zone-btn zone-d" data-zone="D">Zone D — Industrial</button>
+        </div>
+      </div>
+
+      <div class="table-outer">
+        <div style="overflow-x:auto; max-height:640px;">
+          <table class="data-table" aria-label="All bins status table">
+            <thead>
+              <tr>
+                <th scope="col">Bin ID</th>
+                <th scope="col">Zone</th>
+                <th scope="col">Location</th>
+                <th scope="col">Fill Level</th>
+                <th scope="col">Priority Score</th>
+                <th scope="col">Status</th>
+                <th scope="col">In Route?</th>
+              </tr>
+            </thead>
+            <tbody id="bins-tbody-full">
+              <tr><td class="empty-row" colspan="7">Run a simulation to populate bin data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /panel-bins -->
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         TAB 3 — ANALYTICS
+         ══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel hidden" id="panel-analytics" role="tabpanel" aria-labelledby="tab-analytics">
+
+      <!-- Charts -->
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-title">🎨 Fill Level Distribution</div>
+          <div class="chart-canvas-wrap donut-wrap">
+            <canvas id="chart-fill" aria-label="Fill level distribution chart"></canvas>
+          </div>
+          <div class="fill-legend" id="fill-legend" aria-label="Chart legend"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">🏆 Top 10 Priority Bins</div>
+          <div class="chart-canvas-wrap bar-wrap">
+            <canvas id="chart-priority" aria-label="Top 10 priority bins chart"></canvas>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">🗺 Zone Average Fill %</div>
+          <div class="chart-canvas-wrap bar-wrap">
+            <canvas id="chart-zones" aria-label="Zone average fill percentage chart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overflow Predictions (Member 4) -->
+      <div class="data-card">
+        <div class="card-hdr">
+          <div class="card-title">
+            🔮 Overflow Predictions
+            <span class="member-badge m4">MEMBER 4 — AI LOGIC</span>
+          </div>
+          <p class="card-sub">
+            Estimated time to overflow using modelled fill rates.
+            Formula: <code>(100 - fill) ÷ rate/hr</code>
+          </p>
+        </div>
+        <div style="overflow-x:auto; max-height:440px;">
+          <table class="data-table" aria-label="Overflow predictions table">
+            <thead>
+              <tr>
+                <th>Bin</th><th>Location</th><th>Fill Now</th>
+                <th>Rate/hr</th><th>In 2 Hrs</th><th>In 4 Hrs</th>
+                <th>Hours to Full</th><th>Alert</th>
+              </tr>
+            </thead>
+            <tbody id="predictions-tbody">
+              <tr><td class="empty-row" colspan="8">Run a simulation first.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Alert Engine (Member 4) -->
+      <div class="data-card">
+        <div class="card-hdr">
+          <div class="card-title">🚨 Active Alerts <span class="member-badge m4">MEMBER 4 — ALERT ENGINE</span></div>
+          <p class="card-sub">Bins above 75% fill trigger automatic warnings. Above 90% → overflow risk.</p>
+        </div>
+        <div class="analytics-alerts-wrap" id="analytics-alerts" aria-live="polite"></div>
+      </div>
+
+    </div><!-- /panel-analytics -->
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         TAB 4 — SYSTEM DOCS
+         ══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel hidden" id="panel-system" role="tabpanel" aria-labelledby="tab-system">
+
+      <!-- Architecture -->
+      <div class="data-card">
+        <div class="card-hdr">
+          <div class="card-title">🏗 System Architecture</div>
+          <p class="card-sub">Three-tier web application: Frontend → Express API → PostgreSQL</p>
+        </div>
+        <div class="arch-diagram" role="img" aria-label="Three-tier architecture diagram">
+          <div class="arch-tier tier-fe">
+            <div class="tier-icon">💻</div>
+            <div class="tier-name">Frontend</div>
+            <div class="tier-tech">HTML + JS + CSS</div>
+            <div class="tier-owner-tag">Member 1 — public/</div>
+            <ul class="tier-files">
+              <li>landing.html</li>
+              <li>login.html</li>
+              <li>dashboard.html</li>
+              <li>app.js</li>
+              <li>style.css</li>
+            </ul>
+          </div>
+          <div class="arch-connector" aria-hidden="true">
+            <div class="arch-line"></div>
+            <div class="arch-arrow-label">REST API<br/>JSON</div>
+            <div class="arch-line"></div>
+          </div>
+          <div class="arch-tier tier-be">
+            <div class="tier-icon">⚙️</div>
+            <div class="tier-name">Backend</div>
+            <div class="tier-tech">Node.js + Express</div>
+            <div class="tier-owner-tag">Member 2 — src/</div>
+            <ul class="tier-files">
+              <li>index.js</li>
+              <li>binRouter.js</li>
+              <li>routeRouter.js</li>
+              <li>binService.js</li>
+              <li>routeService.js</li>
+            </ul>
+          </div>
+          <div class="arch-connector" aria-hidden="true">
+            <div class="arch-line"></div>
+            <div class="arch-arrow-label">pg Pool<br/>SQL</div>
+            <div class="arch-line"></div>
+          </div>
+          <div class="arch-tier tier-db">
+            <div class="tier-icon">🗄️</div>
+            <div class="tier-name">Database</div>
+            <div class="tier-tech">PostgreSQL 15</div>
+            <div class="tier-owner-tag">Member 3 — db/</div>
+            <ul class="tier-files">
+              <li>schema.sql</li>
+              <li>seed.sql</li>
+              <li>migrations/</li>
+              <li>docker-compose.yml</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- API Contract -->
+      <div class="data-card">
+        <div class="card-hdr">
+          <div class="card-title">🔌 API Contract <span class="locked-badge">🔒 LOCKED DAY 1</span></div>
+          <p class="card-sub">Field names are frozen. Any change after Day 1 requires full-team sync.</p>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table" aria-label="API endpoints">
+            <thead>
+              <tr><th>Method</th><th>Endpoint</th><th>Purpose</th><th>Response Shape</th><th>Owner</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="http-badge get">GET</span></td>
+                <td><code>/api/bins</code></td>
+                <td>All bins with current fill + priority</td>
+                <td><code>[{ id, location, fill_pct, priority }]</code></td>
+                <td>Member 2</td>
+              </tr>
+              <tr>
+                <td><span class="http-badge post">POST</span></td>
+                <td><code>/api/bins/simulate</code></td>
+                <td>Generate new fill data, write to DB</td>
+                <td><code>{ message, bins: [...], alerts: [...] }</code></td>
+                <td>Member 2</td>
+              </tr>
+              <tr>
+                <td><span class="http-badge get">GET</span></td>
+                <td><code>/api/route/today</code></td>
+                <td>Today's sorted priority route</td>
+                <td><code>[{ id, location, fill_pct, priority, rank }]</code></td>
+                <td>Lead</td>
+              </tr>
+              <tr>
+                <td><span class="http-badge get">GET</span></td>
+                <td><code>/api/route/predictions</code></td>
+                <td>Overflow time predictions per bin</td>
+                <td><code>[{ bin_id, fill_pct, hours_left, alert_level }]</code></td>
+                <td>Member 4</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Business Logic -->
+      <div class="data-card">
+        <div class="card-hdr">
+          <div class="card-title">🧠 Business Logic (Member 4)</div>
+        </div>
+        <div class="logic-grid">
+          <div class="logic-card">
+            <div class="logic-label">Priority Formula</div>
+            <code class="logic-code">priority = (fill_pct × 0.1)<br/>+ urgency_noise(0–2)</code>
+            <p class="logic-desc">Converts fill % to 0–10 scale and adds urgency factor. Range: 0–12.</p>
+          </div>
+          <div class="logic-card">
+            <div class="logic-label">Route Threshold</div>
+            <code class="logic-code">bins.filter(b =&gt; b.priority &gt;= 7.0)<br/>.top10</code>
+            <p class="logic-desc">Bins scoring ≥ 7.0 qualify. Top 10 highest-priority enter the route.</p>
+          </div>
+          <div class="logic-card">
+            <div class="logic-label">Route Generation</div>
+            <code class="logic-code">score = 0.6 × normFill<br/>− 0.4 × normDist</code>
+            <p class="logic-desc">Greedy nearest-neighbour: 60% fill urgency + 40% travel proximity. Real Haversine distances.</p>
+          </div>
+          <div class="logic-card">
+            <div class="logic-label">Alert Threshold</div>
+            <code class="logic-code">≥ 75% → WARNING<br/>≥ 90% → OVERFLOW_RISK</code>
+            <p class="logic-desc">Alert shape: <code>{ bin_id, location, fill_pct, alert }</code></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data Flow -->
+      <div class="data-card">
+        <div class="card-hdr">
+          <div class="card-title">🔄 Data Flow — Simulate → Map</div>
+        </div>
+        <ol class="flow-steps" aria-label="Data flow steps">
+          <li class="flow-step step-fe"><span class="step-num">1</span><span><strong>User clicks Run Simulation</strong> → <code>POST /api/bins/simulate</code> via fetch()</span></li>
+          <li class="flow-step step-be"><span class="step-num">2</span><span>Express backend calls <code>simulateBins()</code> → generates random fill levels for all 22 bins</span></li>
+          <li class="flow-step step-db"><span class="step-num">3</span><span>New fill values written to <code>fill_history</code> table in PostgreSQL. <em>DB write is mandatory — not in-memory!</em></span></li>
+          <li class="flow-step step-be"><span class="step-num">4</span><span><code>GET /api/bins</code> reads <code>latest_bin_fills</code> VIEW → <code>calculatePriority()</code> applied per bin</span></li>
+          <li class="flow-step step-m4"><span class="step-num">5</span><span><code>GET /api/route/today</code> → <code>generateRoute()</code> filters ≥ 7.0 → <code>greedyOptimizeRoute()</code> orders stops</span></li>
+          <li class="flow-step step-fe"><span class="step-num">6</span><span>Browser re-renders: map markers update, route polyline redraws, charts refresh, alert banners fire</span></li>
+        </ol>
+      </div>
+
+      <!-- Team Roles -->
+      <div class="data-card">
+        <div class="card-hdr">
+          <div class="card-title">👥 Team Roles</div>
+          <p class="card-sub">Integration-first build — no component is an island.</p>
+        </div>
+        <div class="team-grid">
+          <div class="team-card is-you member1">
+            <span class="team-badge">Member 1</span>
+            <div class="team-role">Frontend Developer</div>
+            <div class="team-owns">Owns: <code>public/</code></div>
+            <ul class="team-tasks">
+              <li>Dashboard UI, Leaflet map, Chart.js charts</li>
+              <li>Fetch calls + Stub → Real API wiring</li>
+              <li>Colour-coded fill badges + overflow banners</li>
+              <li>Login/Signup pages + localStorage auth</li>
+            </ul>
+          </div>
+          <div class="team-card member2">
+            <span class="team-badge">Member 2</span>
+            <div class="team-role">Backend Developer</div>
+            <div class="team-owns">Owns: <code>src/</code></div>
+            <ul class="team-tasks">
+              <li>Express REST API — 3 endpoints</li>
+              <li>Simulation service (DB writes)</li>
+              <li>CORS + error handling</li>
+              <li>DB pool config</li>
+            </ul>
+          </div>
+          <div class="team-card member3">
+            <span class="team-badge">Member 3</span>
+            <div class="team-role">Database &amp; Deployment</div>
+            <div class="team-owns">Owns: <code>db/</code></div>
+            <ul class="team-tasks">
+              <li>PostgreSQL schema + 22 bins seed</li>
+              <li>latest_bin_fills VIEW</li>
+              <li>Docker Compose setup</li>
+              <li>Cloud deployment (Day 3)</li>
+            </ul>
+          </div>
+          <div class="team-card member4">
+            <span class="team-badge">Member 4</span>
+            <div class="team-role">Logic, AI &amp; Extras</div>
+            <div class="team-owns">Owns: <code>services/</code></div>
+            <ul class="team-tasks">
+              <li>calculatePriority() — 5 test cases</li>
+              <li>generateRoute() — greedy optimiser</li>
+              <li>predictionService.js — fill rate model</li>
+              <li>alertEngine.js — overflow alerts</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Do / Don't rules -->
+      <div class="data-card rules-card">
+        <div class="card-hdr">
+          <div class="card-title">📋 Non-Negotiable Rules</div>
+        </div>
+        <div class="rules-cols">
+          <div class="do-col">
+            <div class="rules-hdr do-hdr">✅ DO</div>
+            <ul class="rules-list">
+              <li>Build stubs first, swap real logic on Day 2</li>
+              <li>Test each endpoint with curl before wiring to UI</li>
+              <li>Communicate schema/field changes immediately</li>
+              <li>Commit code at end of each day</li>
+              <li>Run full demo flow together at end of Day 2</li>
+              <li>Keep <code>.env</code> out of Git</li>
+            </ul>
+          </div>
+          <div class="dont-col">
+            <div class="rules-hdr dont-hdr">❌ DON'T</div>
+            <ul class="rules-list">
+              <li>Wait for another member to finish before starting</li>
+              <li>Build full ML models or complex AI</li>
+              <li>Change API response shapes without telling the team</li>
+              <li>Depend on AWS or cloud until Day 3</li>
+              <li>Save debugging for Day 3 morning</li>
+              <li>Hardcode credentials in source files</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Demo Script -->
+      <div class="data-card">
+        <div class="card-hdr">
+          <div class="card-title">🎤 Demo Script — 5 Steps</div>
+        </div>
+        <ol class="demo-steps" aria-label="Demo script steps">
+          <li class="demo-step"><div class="demo-num">1</div><span><strong>Open dashboard, show bin table.</strong> "This is our SmartWaste dashboard. It shows all 22 bins in the GIFT City zone with their current fill level and priority score."</span></li>
+          <li class="demo-step"><div class="demo-num">2</div><span><strong>Click Run Simulation.</strong> "We click Simulate. This reads from IoT sensors — in our prototype, it generates realistic fill data. Watch the map markers change."</span></li>
+          <li class="demo-step"><div class="demo-num">3</div><span><strong>Point to colour-coded markers.</strong> "Green bins are under 40% — we skip those. Amber needs monitoring. Red above 75% are critical and automatically enter today's route."</span></li>
+          <li class="demo-step"><div class="demo-num">4</div><span><strong>Point to route sidebar and polyline.</strong> "This is today's optimised route. The driver follows the dashed line — ordered by waste urgency AND proximity so no backtracking."</span></li>
+          <li class="demo-step"><div class="demo-num">5</div><span><strong>Click Simulate again.</strong> "New data, new route. The system adapts instantly. No human intervention. Priority formula: fill% × 0.1 + urgency(0–2) ≥ 7.0."</span></li>
+        </ol>
+        <div class="demo-qa">
+          <strong>Q: "How is the priority calculated?"</strong><br />
+          "Priority = fill percentage scaled to 0–10, plus a small urgency factor 0–2. Bins scoring above 7 enter today's route, ordered by a greedy algorithm that balances waste urgency (60%) with travel distance (40%)."
+        </div>
+      </div>
+
+    </div><!-- /panel-system -->
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="app-footer" role="contentinfo">
+    SmartWaste — GIFT City ♻ | v2.0 | 3-Day Rapid Prototype | Integration-First Build | &copy; 2026 SmartWaste Team
+  </footer>
+
+  <!-- Dashboard JS -->
+  <script src="app.js"></script>
+
+  <!-- Logout + user dropdown -->
+  <script>
+    function logout() {
+      localStorage.removeItem('sw_session');
+      window.location.href = 'login.html';
+    }
+
+    // User dropdown
+    const pill     = document.getElementById('user-pill');
+    const dropdown = document.getElementById('user-dropdown');
+    if (pill && dropdown) {
+      pill.addEventListener('click', () => {
+        const open = !dropdown.classList.contains('hidden');
+        dropdown.classList.toggle('hidden', open);
+        pill.setAttribute('aria-expanded', String(!open));
+      });
+      document.addEventListener('click', e => {
+        if (!pill.contains(e.target) && !dropdown.contains(e.target)) {
+          dropdown.classList.add('hidden');
+          pill.setAttribute('aria-expanded', 'false');
+        }
+      });
+      // Populate dropdown names from session
+      try {
+        const s = JSON.parse(localStorage.getItem('sw_session') || '{}');
+        const fullName = s.name || 'Operator';
+        const initials = fullName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+        const av = document.getElementById('user-avatar');
+        if (av) av.textContent = initials;
+        const udf = document.getElementById('ud-name-full');
+        if (udf) udf.textContent = fullName;
+        const un = document.getElementById('user-name-display');
+        if (un) un.textContent = fullName.split(' ')[0];
+      } catch(e) {}
+    }
+  </script>
+</body>
+</html>
