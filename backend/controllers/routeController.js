@@ -11,8 +11,8 @@ async function getToday(req, res, next) {
   try {
     // Re-use bin controller logic by simulating its req/res
     const bins = await _fetchCurrentBins();
-    const route = generateRoute(bins);
-    res.json(route);
+    const { route, stats } = generateRoute(bins);
+    res.json({ route, stats });
   } catch (err) {
     next(err);
   }
