@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartWaste — Dashboard</title>
+  <meta name="description" content="SmartWaste GIFT City live waste management dashboard — real-time bin monitoring, city map, route optimisation, and analytics." />
+  <link rel="stylesheet" href="../css/dashboard.css" />
+  <!-- Leaflet (map) -->
+  <link  rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Chart.js (analytics) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- Auth guard runs inside dashboard.js — redirect if no session -->
+
+  <!-- Loading overlay -->
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="spinner-txt">SmartWaste</div>
+    <div class="spinner-sub">Loading GIFT City data…</div>
+  </div>
+
+  <!-- Error banner -->
+  <div id="err-banner" class="err-banner" role="alert"></div>
+
+  <!-- ── TOP NAVIGATION ──────────────────────────────────────── -->
+  <nav class="app-nav" role="navigation">
+    <div class="nav-inner">
+      <a href="home.html" class="nav-brand">
+        <span class="nav-brand-icon">♻</span>
+        <div>
+          <div class="nav-brand-name">SmartWaste</div>
+          <div class="nav-brand-city">GIFT City, Gandhinagar</div>
+        </div>
+      </a>
+
+      <div class="nav-tabs" role="tablist">
+        <button class="nav-tab active" data-tab="dashboard" role="tab">🗺 Dashboard</button>
+        <button class="nav-tab" data-tab="bins"      role="tab">🗑 All Bins</button>
+        <button class="nav-tab" data-tab="analytics" role="tab">📊 Analytics</button>
+        <button class="nav-tab" data-tab="system"    role="tab">⚙ System</button>
+      </div>
+
+      <div class="nav-right">
+        <div class="status-pill">
+          <div class="status-dot"></div>
+          System Live
+        </div>
+        <time class="nav-clock" id="live-clock"></time>
+        <div class="user-pill" id="user-pill" tabindex="0">
+          <div class="user-avatar" id="user-avatar">?</div>
+          <span class="user-name" id="user-name-display">Operator</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="user-dropdown hidden" id="user-dropdown">
+          <div class="ud-info">
+            <span class="ud-name" id="ud-name-full">Operator</span>
+            <span class="ud-role" id="user-role-display">operator</span>
+          </div>
+          <div class="ud-sep"></div>
+          <button class="ud-item" id="logout-btn">🚪 Log Out</button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Alert bar (overflow chips) -->
+  <div id="alert-bar" class="alert-bar" style="display:none" role="alert" aria-live="polite"></div>
+
+  <main role="main">
+
+    <!-- ══════════════════════════════════════════════════════════
+         TAB 1 — DASHBOARD (Map + Route)
+         ══════════════════════════════════════════════════════════ -->
+    <div class="tab-panel active" id="panel-dashboard">
+
+      <!-- Stat cards -->
+      <div class="stats-bar">
+        <div class="stat-card"><span class="stat-ico">🗑</span><div><div class="stat-val" id="sv-total">—</div><div class="stat-lbl">Total Bins</div></div></div>
+        <div class="stat-card"><span class="stat-ico">🔴</span><div><div class="stat-val danger" id="sv-critical">—</div><div class="stat-lbl">Critical (&gt;75%)</div></div></div>
+        <div class="stat-card"><span class="stat-ico">🚛</span><div><div class="stat-val primary" id="sv-route">—</div><div class="stat-lbl">In Today's Route</div></div></div>
+        <div class="stat-card"><span class="stat-ico">⚡</span><div><div class="stat-val" id="sv-sims">0</div><div class="stat-lbl">Simulations Run</div></div></div>
+        <div class="stat-card"><span class="stat-ico">🕐</span><div><div class="stat-val sm" id="sv-time">—</div><div class="stat-lbl">Last Simulated</div></div></div>
+      </div>
+
+      <!-- Simulate bar -->
+      <div class="sim-bar">
+        <div class="sim-info">
+          <div class="sim-title">GIFT City — Smart Route Dispatch</div>
+          <div class="sim-sub">Click <strong>Run Simulation</strong> to generate fresh IoT sensor data for all 22 bins across Zones A–D. The system calculates priority scores and renders today's optimised collection route live on the city map.</div>
+        </div>
+        <button class="btn-sim" id="simulate-btn">
+          <span class="btn-ico">⚡</span>
+          <span class="btn-txt">Run Simulation</span>
+        </button>
+      </div>
+
+      <!-- Map + Route sidebar -->
+      <div class="map-layout">
+        <div class="map-wrap">
+          <div class="map-btns">
+            <button class="map-btn" id="btn-fit-all">⊙ All Bins</button>
+            <button class="map-btn" id="btn-fit-route">↗ Fit Route</button>
+          </div>
+          <div id="city-map"></div>
+        </div>
+
+        <aside class="route-aside">
+          <div class="aside-hdr">
+            <span>🚛</span>
+            <h2 class="aside-title">Today's Route</h2>
+            <span class="route-badge" id="route-badge">—</span>
+          </div>
+          <p class="aside-sub">Priority ≥ 7.0 · Top 10 bins · Ordered by fill urgency (60%) + proximity (40%)</p>
+          <div class="route-list" id="route-list" role="list"></div>
+          <div class="route-empty show" id="route-empty">
+            <div class="empty-ico">🗺</div>
+            <div class="empty-ttl">No route planned yet</div>
+            <div class="empty-sub">Click <strong>Run Simulation</strong> to generate today's route.</div>
+          </div>
+          <details class="formula-det">
+            <summary class="formula-sum">How is the route ordered?</summary>
+            <div class="formula-body">
+              <code>score = 0.6 × normFill − 0.4 × normDist</code>
+              <p><strong>Candidate filter:</strong> bins where <code>priority ≥ 7.0</code> (top 10 selected).</p>
+              <p><strong>Greedy traversal:</strong> At each step the truck picks the unvisited bin maximising the combined score. Real Haversine distances prevent city-wide zigzagging.</p>
+            </div>
+          </details>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         TAB 2 — ALL BINS
+         ══════════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-bins">
+      <div class="panel-hdr">
+        <div>
+          <h2 class="panel-title">🗑 All Bins — Full Status</h2>
+          <p class="panel-sub">Live fill levels and priority scores for all 22 monitoring points across GIFT City</p>
+        </div>
+        <div class="zone-filters" role="group">
+          <button class="zone-btn active" data-zone="all">All Zones</button>
+          <button class="zone-btn zone-A" data-zone="A">Zone A</button>
+          <button class="zone-btn zone-B" data-zone="B">Zone B</button>
+          <button class="zone-btn zone-C" data-zone="C">Zone C</button>
+          <button class="zone-btn zone-D" data-zone="D">Zone D</button>
+        </div>
+      </div>
+      <div class="table-outer">
+        <div style="overflow-x:auto; max-height:620px">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Bin ID</th><th>Zone</th><th>Location</th><th>Fill Level</th>
+                <th>Priority Score</th><th>Status</th><th>In Route?</th>
+              </tr>
+            </thead>
+            <tbody id="bins-tbody">
+              <tr><td class="empty-row" colspan="7">Run a simulation to populate bin data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         TAB 3 — ANALYTICS
+         ══════════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-analytics">
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-title">🎨 Fill Level Distribution</div>
+          <div class="chart-wrap"><canvas id="chart-fill"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">🏆 Top 10 Priority Bins</div>
+          <div class="chart-wrap"><canvas id="chart-priority"></canvas></div>
+        </div>
+        <div class="chart-card full">
+          <div class="chart-title">🗺 Zone Average Fill %</div>
+          <div class="zone-chart-wrap"><canvas id="chart-zones"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Overflow alerts -->
+      <div class="data-card">
+        <div class="card-hdr">
+          <div class="card-title">🚨 Active Alerts <span class="mbr-badge m4">Member 4 — Alert Engine</span></div>
+          <p class="card-sub">Bins above 75% fill trigger automatic warnings. Above 90% → OVERFLOW_RISK.</p>
+        </div>
+        <div id="analytics-alerts"></div>
+      </div>
+
+      <!-- Predictions -->
+      <div class="data-card">
+        <div class="card-hdr">
+          <div class="card-title">🔮 Overflow Predictions <span class="mbr-badge m4">Member 4 — AI Logic</span></div>
+          <p class="card-sub">Estimated overflow time using modelled fill rates. Formula: <code>(100 - fill) ÷ rate/hr</code></p>
+        </div>
+        <div style="overflow-x:auto; max-height:420px">
+          <table class="data-table" id="predictions-table">
+            <thead>
+              <tr><th>Bin</th><th>Location</th><th>Fill %</th><th>Rate/hr</th><th>In 2h</th><th>In 4h</th><th>Hours to Full</th><th>Alert</th></tr>
+            </thead>
+            <tbody id="predictions-tbody">
+              <tr><td class="empty-row" colspan="8">Run a simulation first.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         TAB 4 — SYSTEM
+         ══════════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-system">
+      <div class="sys-inner">
+
+        <!-- Architecture -->
+        <div class="data-card">
+          <div class="card-hdr">
+            <div class="card-title">🏗 Project Architecture — <code>Cloud_Project/</code></div>
+            <p class="card-sub">Three-tier web application: Frontend HTML/CSS/JS → Node.js Express Backend → PostgreSQL Database</p>
+          </div>
+          <div class="arch-grid">
+            <div class="arch-tier">
+              <div class="tier-ico">💻</div>
+              <div class="tier-name">Frontend</div>
+              <div class="tier-tech">HTML + CSS + JS</div>
+              <div class="tier-owner">Member 1 — <code>frontend/</code></div>
+              <ul class="tier-files">
+                <li>pages/home.html</li>
+                <li>pages/login.html</li>
+                <li>pages/signup.html</li>
+                <li>pages/dashboard.html</li>
+                <li>css/home.css</li>
+                <li>css/auth.css</li>
+                <li>css/dashboard.css</li>
+                <li>js/auth.js</li>
+                <li>js/login.js · js/signup.js</li>
+                <li>js/dashboard.js</li>
+                <li>js/map.js · js/charts.js</li>
+                <li>js/route.js</li>
+              </ul>
+            </div>
+            <div class="arch-tier">
+              <div class="tier-ico">⚙️</div>
+              <div class="tier-name">Backend</div>
+              <div class="tier-tech">Node.js + Express</div>
+              <div class="tier-owner">Member 2 — <code>backend/</code></div>
+              <ul class="tier-files">
+                <li>server.js</li>
+                <li>config/db.js</li>
+                <li>routes/authRoutes.js</li>
+                <li>routes/binRoutes.js</li>
+                <li>routes/routeRoutes.js</li>
+                <li>controllers/authController.js</li>
+                <li>controllers/binController.js</li>
+                <li>controllers/routeController.js</li>
+                <li>services/simulationService.js</li>
+                <li>services/priorityService.js</li>
+                <li>services/routeService.js</li>
+                <li>services/predictionService.js</li>
+                <li>services/alertService.js</li>
+                <li>middleware/errorHandler.js</li>
+              </ul>
+            </div>
+            <div class="arch-tier">
+              <div class="tier-ico">🗄️</div>
+              <div class="tier-name">Database</div>
+              <div class="tier-tech">PostgreSQL 15</div>
+              <div class="tier-owner">Member 3 — <code>database/</code></div>
+              <ul class="tier-files">
+                <li>schema.sql</li>
+                <li>seed.sql</li>
+                <li>queries/userQueries.js</li>
+                <li>queries/binQueries.js</li>
+                <li>queries/historyQueries.js</li>
+                <li>migrations/001_initial.sql</li>
+                <li>data/users.json (dev)</li>
+                <li>data/bins.json (master)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- API Contract -->
+        <div class="data-card">
+          <div class="card-hdr">
+            <div class="card-title">🔌 API Contract <span class="locked">🔒 LOCKED</span></div>
+          </div>
+          <div style="overflow-x:auto; padding:0 1.25rem 1.25rem">
+            <table class="data-table">
+              <thead><tr><th>Method</th><th>Endpoint</th><th>Purpose</th><th>Returns</th><th>Owner</th></tr></thead>
+              <tbody>
+                <tr><td><span class="http-badge http-post">POST</span></td><td><code>/api/auth/login</code></td><td>Login user</td><td><code>{ user }</code></td><td>M2</td></tr>
+                <tr><td><span class="http-badge http-post">POST</span></td><td><code>/api/auth/signup</code></td><td>Register user (saved to data/users.json)</td><td><code>{ user }</code></td><td>M2</td></tr>
+                <tr><td><span class="http-badge http-get">GET</span></td><td><code>/api/bins</code></td><td>All bins + current fill</td><td><code>[{ id, fill_pct, priority, …}]</code></td><td>M2</td></tr>
+                <tr><td><span class="http-badge http-post">POST</span></td><td><code>/api/bins/simulate</code></td><td>Generate new IoT fill data</td><td><code>{ bins, alerts }</code></td><td>M2</td></tr>
+                <tr><td><span class="http-badge http-get">GET</span></td><td><code>/api/route/today</code></td><td>Greedy-optimised route</td><td><code>[{ id, rank, …}]</code></td><td>Lead</td></tr>
+                <tr><td><span class="http-badge http-get">GET</span></td><td><code>/api/route/predictions</code></td><td>Overflow time predictions</td><td><code>[{ hours_to_full, … }]</code></td><td>M4</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Business Logic -->
+        <div class="data-card">
+          <div class="card-hdr">
+            <div class="card-title">🧠 Business Logic <span class="mbr-badge m4">Member 4</span></div>
+          </div>
+          <div class="logic-grid">
+            <div class="logic-card">
+              <div class="logic-label">Priority Formula</div>
+              <code class="logic-code">priority = (fill% × 0.1)<br/>+ urgency_noise(0–2)</code>
+              <p class="logic-desc">Converts fill % to 0–10 scale with urgency factor. Range 0–12. Source: <code>backend/services/priorityService.js</code></p>
+            </div>
+            <div class="logic-card">
+              <div class="logic-label">Route Threshold</div>
+              <code class="logic-code">bins.filter(b => b.priority >= 7.0)<br/>.slice(0, 10)</code>
+              <p class="logic-desc">Bins ≥ 7.0 qualify. Top 10 highest-priority enter the route. Source: <code>backend/services/routeService.js</code></p>
+            </div>
+            <div class="logic-card">
+              <div class="logic-label">Greedy Ordering</div>
+              <code class="logic-code">score = 0.6 × normFill<br/>− 0.4 × normDist</code>
+              <p class="logic-desc">At each step picks the bin maximising this score. Real Haversine distances. Source: <code>frontend/js/route.js</code></p>
+            </div>
+            <div class="logic-card">
+              <div class="logic-label">Alert Thresholds</div>
+              <code class="logic-code">≥ 75% → WARNING<br/>≥ 90% → OVERFLOW_RISK</code>
+              <p class="logic-desc">Alert shape: <code>{ bin_id, location, fill_pct, alert }</code>. Source: <code>backend/services/alertService.js</code></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Data Flow -->
+        <div class="data-card">
+          <div class="card-hdr"><div class="card-title">🔄 Data Flow — Simulate → Map → Dispatch</div></div>
+          <ol class="flow-ol">
+            <li class="flow-li fe"><span class="flow-num">1</span><span><strong>User clicks Run Simulation</strong> — <code>POST /api/bins/simulate</code> sent from <code>frontend/js/dashboard.js</code></span></li>
+            <li class="flow-li be"><span class="flow-num">2</span><span><code>backend/controllers/binController.js</code> calls <code>simulationService.js</code> → generates random fill levels for all 22 bins</span></li>
+            <li class="flow-li db"><span class="flow-num">3</span><span>New fill values written to <code>fill_history</code> table in PostgreSQL (or kept in memory). <em>DB write is mandatory — not in-memory!</em></span></li>
+            <li class="flow-li be"><span class="flow-num">4</span><span><code>alertService.js</code> fires alerts for bins ≥ 75%. Response: <code>{ bins, alerts }</code> returned to frontend</span></li>
+            <li class="flow-li fe"><span class="flow-num">5</span><span><code>frontend/js/route.js greedyOptimizeRoute()</code> runs in the browser — orders candidates by score</span></li>
+            <li class="flow-li fe"><span class="flow-num">6</span><span><code>frontend/js/map.js</code> redraws markers + route polyline. <code>charts.js</code> updates all charts. Alerts shown in nav bar.</span></li>
+          </ol>
+        </div>
+
+        <!-- Team -->
+        <div class="data-card">
+          <div class="card-hdr"><div class="card-title">👥 Team Roles</div></div>
+          <div class="team-section">
+            <div class="team-card tc-1">
+              <div class="tc-badge">Member 1</div>
+              <div class="tc-role">Frontend Developer</div>
+              <div class="tc-owns">Owns: <code>frontend/</code></div>
+              <ul class="tc-tasks"><li>4 separate HTML pages</li><li>3 separate CSS files</li><li>8 separate JS modules</li><li>City map + Charts + Route optimizer</li></ul>
+            </div>
+            <div class="team-card tc-2">
+              <div class="tc-badge">Member 2</div>
+              <div class="tc-role">Backend Developer</div>
+              <div class="tc-owns">Owns: <code>backend/</code></div>
+              <ul class="tc-tasks"><li>Express server.js</li><li>3 route files</li><li>3 controller files</li><li>CORS + error middleware</li></ul>
+            </div>
+            <div class="team-card tc-3">
+              <div class="tc-badge">Member 3</div>
+              <div class="tc-role">Database &amp; Deployment</div>
+              <div class="tc-owns">Owns: <code>database/ + data/</code></div>
+              <ul class="tc-tasks"><li>schema.sql + seed.sql</li><li>3 SQL query modules</li><li>users.json + bins.json data stores</li></ul>
+            </div>
+            <div class="team-card tc-4">
+              <div class="tc-badge">Member 4</div>
+              <div class="tc-role">Logic, AI &amp; Extras</div>
+              <div class="tc-owns">Owns: <code>backend/services/</code></div>
+              <ul class="tc-tasks"><li>priorityService.js</li><li>routeService.js</li><li>predictionService.js</li><li>alertService.js</li></ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Do/Dont + Demo Script -->
+        <div class="data-card">
+          <div class="card-hdr"><div class="card-title">📋 Non-Negotiable Rules</div></div>
+          <div class="rules-cols">
+            <div class="do-col">
+              <div class="rules-hdr do-hdr">✅ DO</div>
+              <ul class="rules-list">
+                <li>Keep frontend, backend, and database in separate folders</li>
+                <li>Each page's CSS and JS in its own file</li>
+                <li>User data lives only in <code>data/users.json</code></li>
+                <li>Test each API endpoint before wiring the UI</li>
+                <li>Commit at end of every work session</li>
+              </ul>
+            </div>
+            <div class="dont-col">
+              <div class="rules-hdr dont-hdr">❌ DON'T</div>
+              <ul class="rules-list">
+                <li>Mix business logic into HTML files</li>
+                <li>Hardcode credentials in source code</li>
+                <li>Change API response shapes without team sync</li>
+                <li>Commit <code>.env</code> or <code>node_modules/</code></li>
+                <li>Save debugging for the morning of the demo</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="data-card">
+          <div class="card-hdr"><div class="card-title">🎤 5-Step Demo Script</div></div>
+          <ol class="demo-list">
+            <li class="demo-step"><div class="demo-num">1</div><span><strong>Open dashboard.</strong> "This is SmartWaste. It shows 22 bins in GIFT City with their real-time fill level and priority score."</span></li>
+            <li class="demo-step"><div class="demo-num">2</div><span><strong>Click Run Simulation.</strong> "This reads from IoT sensors. In our prototype it generates realistic fill data. Watch the map markers change colour."</span></li>
+            <li class="demo-step"><div class="demo-num">3</div><span><strong>Point to markers.</strong> "Green bins are under 40% — we skip those. Amber means monitoring needed. Red above 75% enter today's route automatically."</span></li>
+            <li class="demo-step"><div class="demo-num">4</div><span><strong>Point to route sidebar and polyline.</strong> "This is today's optimised route. The driver follows the dashed line — ordered by waste urgency AND proximity so no backtracking."</span></li>
+            <li class="demo-step"><div class="demo-num">5</div><span><strong>Click Simulate again.</strong> "New data, new route. The system adapts instantly. No human intervention needed."</span></li>
+          </ol>
+          <div class="demo-qa"><strong>Expected Q: "How is priority calculated?"</strong> — "Priority = fill percentage scaled to 0–10, plus a small urgency factor 0–2. Bins scoring above 7 enter today's route, ordered by a greedy algorithm that balances waste urgency (60%) with travel distance (40%)."</div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    SmartWaste — GIFT City ♻ | v2.0 | 3-Day Rapid Prototype | Fully separated Frontend / Backend / Database | © 2026 SmartWaste Team
+  </footer>
+
+  <!-- JS load order: auth helpers → route algorithm → map → charts → dashboard controller -->
+  <script src="../js/auth.js"></script>
+  <script src="../js/route.js"></script>
+  <script src="../js/map.js"></script>
+  <script src="../js/charts.js"></script>
+  <script src="../js/dashboard.js"></script>
+</body>
+</html>

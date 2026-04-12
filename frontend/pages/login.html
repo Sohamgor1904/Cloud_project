@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log In — SmartWaste</title>
+  <meta name="description" content="Log in to the SmartWaste GIFT City dashboard." />
+  <link rel="stylesheet" href="../css/auth.css" />
+</head>
+<body>
+
+  <!-- LEFT INFO PANEL -->
+  <div class="left-panel" aria-hidden="true">
+    <div class="lp-grid"></div>
+    <div class="lp-orb lp-orb-1"></div>
+    <div class="lp-orb lp-orb-2"></div>
+    <div class="lp-inner">
+      <a href="home.html" class="brand">
+        <span class="brand-icon">♻</span>
+        <div>
+          <div class="brand-name">SmartWaste</div>
+          <div class="brand-tag">Gandhinagar GIFT City</div>
+        </div>
+      </a>
+      <div class="lp-headline">
+        <h1>Data-driven<br /><span>waste dispatch.</span><br />Zero overflow.</h1>
+        <p>Real-time monitoring of 22 smart bins across 4 GIFT City zones. Priority-based route optimisation dispatched to drivers instantly.</p>
+      </div>
+    </div>
+    <div class="lp-stats">
+      <div class="lp-stat"><div class="lps-val">22</div><div class="lps-lbl">Smart Bins</div></div>
+      <div class="lp-stat"><div class="lps-val">4</div><div class="lps-lbl">Zones</div></div>
+      <div class="lp-stat"><div class="lps-val">98%</div><div class="lps-lbl">Accuracy</div></div>
+    </div>
+    <div class="lp-footer">
+      <div class="live-dot"></div>
+      <span class="live-txt">System live · All 22 bins reporting</span>
+    </div>
+  </div>
+
+  <!-- RIGHT FORM PANEL -->
+  <div class="right-panel" role="main">
+    <div class="auth-box">
+
+      <a href="home.html" class="back-link">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        Back to home
+      </a>
+
+      <h1 class="auth-title">Welcome back 👋</h1>
+      <p class="auth-sub">Don't have an account? <a href="signup.html">Sign up free</a></p>
+
+      <div class="banner banner-err" id="login-err-banner" role="alert"></div>
+
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="login-email">Email Address</label>
+          <input class="form-input" type="email" id="login-email" name="email"
+            placeholder="you@example.com" autocomplete="email" required />
+          <div class="form-err" id="login-email-err"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="login-password">Password</label>
+          <div class="pass-wrap">
+            <input class="form-input" type="password" id="login-password" name="password"
+              placeholder="••••••••" autocomplete="current-password" required />
+            <button type="button" class="pass-toggle" id="pass-toggle" aria-label="Toggle password visibility">👁</button>
+          </div>
+          <div class="form-err" id="login-password-err"></div>
+        </div>
+
+        <div class="forgot"><a href="#">Forgot password?</a></div>
+
+        <button type="submit" class="btn-auth" id="login-btn">
+          <span class="btn-spin" aria-hidden="true"></span>
+          <span class="btn-txt">Log In to Dashboard</span>
+        </button>
+      </form>
+
+      <div class="auth-div">or</div>
+      <button class="btn-demo" id="demo-btn">⚡ Quick Demo — demo@smartwaste.in / demo123</button>
+      <p class="terms">Demo account is pre-seeded in <code>data/users.json</code></p>
+    </div>
+  </div>
+
+  <script src="../js/auth.js"></script>
+  <script src="../js/login.js"></script>
+</body>
+</html>
