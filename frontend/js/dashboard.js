@@ -94,18 +94,14 @@ async function runSimulation() {
     const data = await res.json();         // { message, bins, alerts }
     currentBins = data.bins;
 
-    // Route is computed client-side using route.js
-    const candidates = [...data.bins]
-      .filter(b => b.priority >= 7.0)
-      .sort((a, b) => b.priority - a.priority)
-      .slice(0, 10);
-    const route = greedyOptimizeRoute(candidates);  // from route.js
+    // Route: critical-only (fill ≥ 75%), nearest-neighbor across ALL zones
+    const { route, stats } = buildRoute(data.bins);  // from route.js
 
-    // Merge rank into currentBins
+    // Merge rank into currentBins for table display
     const rankMap = Object.fromEntries(route.map(r => [r.id, r.rank]));
     currentBins = currentBins.map(b => ({ ...b, rank: rankMap[b.id] || null }));
 
-    _applyUpdate(currentBins, route, data.alerts || []);
+    _applyUpdate(currentBins, route, data.alerts || [], stats);
     simCount++;
     const sv = document.getElementById('sv-sims');
     if (sv) sv.textContent = simCount;
@@ -120,7 +116,7 @@ async function runSimulation() {
 }
 
 // ── APPLY ALL DATA TO UI ───────────────────────────────────────────────────
-function _applyUpdate(bins, route, alerts = []) {
+function _applyUpdate(bins, route, alerts = [], stats = null) {
   // Stats
   document.getElementById('sv-total').textContent    = bins.length;
   document.getElementById('sv-critical').textContent = bins.filter(b => b.fill_pct >= 75).length;
@@ -133,7 +129,7 @@ function _applyUpdate(bins, route, alerts = []) {
   if (bins.length) fitAllBins(bins);
 
   // Route sidebar
-  renderRouteSidebar(route);
+  renderRouteSidebar(route, stats);
 
   // All Bins table
   renderBinsTable(bins, 'all');
@@ -147,29 +143,47 @@ function _applyUpdate(bins, route, alerts = []) {
 }
 
 // ── ROUTE SIDEBAR ──────────────────────────────────────────────────────────
-function renderRouteSidebar(route) {
+function renderRouteSidebar(route, stats = null) {
   const list  = document.getElementById('route-list');
   const empty = document.getElementById('route-empty');
   const badge = document.getElementById('route-badge');
+  const statsEl = document.getElementById('route-stats');
   if (!list) return;
 
   if (!route.length) {
     list.innerHTML = '';
     empty?.classList.add('show');
     if (badge) badge.textContent = '0';
+    if (statsEl) statsEl.innerHTML = stats
+      ? `<span style="color:#f87171">0 critical bins to collect today ✓</span>`
+      : '';
     return;
   }
   empty?.classList.remove('show');
   if (badge) badge.textContent = route.length;
+  // Route stats strip
+  if (statsEl && stats) {
+    statsEl.innerHTML = `
+      <span>🔴 ${stats.critical_count} critical</span>
+      <span style="color:#888">·</span>
+      <span>📍 Zones: ${stats.zones_covered || '—'}</span>
+      <span style="color:#888">·</span>
+      <span>🛣 ~${stats.total_distance} km total</span>
+    `;
+  }
 
   list.innerHTML = route.map(b => {
-    const color = b.fill_pct >= 75 ? '#f87171' : b.fill_pct >= 40 ? '#fcd34d' : '#34d399';
+    const isCrit  = b.fill_pct >= 75;
+    const color   = isCrit ? '#f87171' : '#fcd34d';
+    const distTxt = b.distance_from_prev_km != null
+      ? `${b.distance_from_prev_km} km from prev`
+      : `Zone ${b.zone}`;
     return `
       <div class="route-item" onclick="panToBin(${b.lat},${b.lng})" role="listitem">
-        <div class="ri-rank">${b.rank}</div>
+        <div class="ri-rank" style="background:${isCrit ? 'linear-gradient(135deg,#dc2626,#ef4444)' : 'linear-gradient(135deg,#d97706,#f59e0b)'}">${b.rank}</div>
         <div class="ri-body">
           <div class="ri-loc" title="${b.location}">${b.location}</div>
-          <div class="ri-meta">Zone ${b.zone} · Priority ${b.priority.toFixed(2)}</div>
+          <div class="ri-meta">Zone ${b.zone} · ${distTxt}</div>
         </div>
         <span class="ri-fill" style="color:${color}">${b.fill_pct.toFixed(1)}%</span>
       </div>`;

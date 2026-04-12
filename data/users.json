@@ -14,5 +14,13 @@
     "password": "admin123",
     "role": "admin",
     "createdAt": "2026-04-01T00:00:00.000Z"
+  },
+  {
+    "id": 1776015102773,
+    "name": "Soham Gor",
+    "email": "soham@giftcity.in",
+    "password": "smart123",
+    "role": "operator",
+    "createdAt": "2026-04-12T17:31:42.773Z"
   }
 ]

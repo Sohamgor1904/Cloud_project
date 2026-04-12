@@ -114,7 +114,8 @@
             <h2 class="aside-title">Today's Route</h2>
             <span class="route-badge" id="route-badge">—</span>
           </div>
-          <p class="aside-sub">Priority ≥ 7.0 · Top 10 bins · Ordered by fill urgency (60%) + proximity (40%)</p>
+          <p class="aside-sub">🔴 Critical bins only (≥75% fill) · Nearest stop first · Spans all 4 Zones A–D</p>
+          <div id="route-stats" style="display:flex;gap:.5rem;flex-wrap:wrap;font-size:.7rem;color:#94a3b8;padding:.25rem 0;min-height:1.2rem"></div>
           <div class="route-list" id="route-list" role="list"></div>
           <div class="route-empty show" id="route-empty">
             <div class="empty-ico">🗺</div>
@@ -124,9 +125,10 @@
           <details class="formula-det">
             <summary class="formula-sum">How is the route ordered?</summary>
             <div class="formula-body">
-              <code>score = 0.6 × normFill − 0.4 × normDist</code>
-              <p><strong>Candidate filter:</strong> bins where <code>priority ≥ 7.0</code> (top 10 selected).</p>
-              <p><strong>Greedy traversal:</strong> At each step the truck picks the unvisited bin maximising the combined score. Real Haversine distances prevent city-wide zigzagging.</p>
+              <code>Candidates: bins where fill_pct ≥ 75% (CRITICAL)</code>
+              <p><strong>Step 1 — Filter:</strong> Only red-flagged bins (fill ≥ 75%) must be emptied. Warning bins (55–74%) added if slots remain.</p>
+              <p><strong>Step 2 — Nearest First:</strong> Starting from depot, always pick the <em>closest unvisited critical bin</em> using real Haversine km distance.</p>
+              <p><strong>City-wide:</strong> No zone restriction — route spans all 4 zones (A, B, C, D) as needed.</p>
             </div>
           </details>
         </aside>
