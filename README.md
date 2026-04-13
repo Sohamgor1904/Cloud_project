@@ -20,39 +20,43 @@
 
 ## 🚀 How to Run
 
-### 1. Install dependencies
+### Option A: Using Docker (Recommended)
 
-```bash
-npm install
-```
+1. Make sure Docker Desktop is running.
+2. Build and start the containers:
+   ```bash
+   docker-compose up -d --build
+   ```
+3. Initialize the database schema and sample data:
+   **Windows (Command Prompt / PowerShell)**
+   ```bash
+   cmd.exe /c "docker exec -i smartwaste-db psql -U postgres -d smartwaste < database\schema.sql"
+   cmd.exe /c "docker exec -i smartwaste-db psql -U postgres -d smartwaste < database\seed.sql"
+   ```
+   **Mac/Linux**
+   ```bash
+   docker exec -i smartwaste-db psql -U postgres -d smartwaste < database/schema.sql
+   docker exec -i smartwaste-db psql -U postgres -d smartwaste < database/seed.sql
+   ```
+4. Access the application directly at [http://localhost/](http://localhost/).
 
-### 2. Configure environment
+---
 
-```bash
-copy .env.example .env
-# Edit .env with your PostgreSQL credentials
-```
+### Option B: Local Development (Without Docker)
 
-### 3. Set up PostgreSQL
-
-```bash
-# Create database
-psql -U postgres -c "CREATE DATABASE smartwaste;"
-
-# Run schema + seed
-psql -U postgres -d smartwaste -f database/schema.sql
-psql -U postgres -d smartwaste -f database/seed.sql
-```
-
-### 4. Start Server
-
-By default, the Node server serves both API and frontend static files on port 3000.
-
-```bash
-npm run dev
-# Server running at: http://localhost:3000
-# Home Page: http://localhost:3000/pages/home.html
-```
+1. **Install dependencies**: `npm install`
+2. **Configure environment**: `copy .env.example .env` (update with your PostgreSQL credentials)
+3. **Set up PostgreSQL**:
+   ```bash
+   psql -U postgres -c "CREATE DATABASE smartwaste;"
+   psql -U postgres -d smartwaste -f database/schema.sql
+   psql -U postgres -d smartwaste -f database/seed.sql
+   ```
+4. **Start Server**:
+   ```bash
+   npm run dev
+   # Server running at: http://localhost:3000
+   ```
 
 ---
 
@@ -82,6 +86,9 @@ Cloud_Project/
 │   ├── bins.json
 │   └── users.json
 │
+├── Dockerfile                  ← Multi-stage Node.js build config
+├── docker-compose.yml          ← Orchestrates NodeJS and PostgreSQL containers
+├── .dockerignore               ← Build exclusions
 ├── .env.example                ← Template for environment variables
 ├── package.json                ← NPM configuration
 └── README.md
