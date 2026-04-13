@@ -4,7 +4,7 @@
  * Depends on: auth.js, map.js, charts.js, route.js (all loaded before this)
  */
 
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = '/api';
 let currentBins = [];
 let simCount    = 0;
 

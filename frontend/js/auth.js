@@ -4,7 +4,7 @@
  * Imported by login.js, signup.js, and dashboard.js
  */
 
-const API = 'http://localhost:3000/api';
+const API = '/api';
 const SESSION_KEY = 'sw_session';
 
 /** Get current session object or null */

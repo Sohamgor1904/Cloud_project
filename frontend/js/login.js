@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setSession(data.user);
       window.location.href = '/pages/dashboard.html';
     } catch {
-      showBanner(errBanner, '⚠ Cannot reach server. Make sure the backend is running on port 3000.', 'err');
+      showBanner(errBanner, '⚠ Cannot reach server. Make sure the backend is running.', 'err');
     } finally {
       setBtnLoading(btn, false);
     }
